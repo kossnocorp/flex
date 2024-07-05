@@ -1,0 +1,10 @@
+{
+  "profiles": {
+    "Flex (Package)": {
+      "commandName": "MsixPackage"
+    },
+    "Flex (Unpackaged)": {
+      "commandName": "Project"
+    }
+  }
+}
