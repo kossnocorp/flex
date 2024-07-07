@@ -22,6 +22,11 @@
                 Width="300" 
                 Margin="10" />
         </StackPanel>
+        <ComboBox x:Name="DisplayComboBox"
+            Header="Select Display"
+            SelectionChanged="DisplayComboBox_SelectionChanged"
+            Width="300"
+            Margin="10" />
         <Border BorderBrush="Red" BorderThickness="2">
             <MediaPlayerElement x:Name="WebcamFeed" 
                                 Height="300" 

@@ -6,17 +6,19 @@ using Windows.Media.Core;
 using Windows.Media.Playback;
 using Windows.Media.MediaProperties;
 using Windows.Graphics.Capture;
-using Windows.Graphics.DirectX.Direct3D11;
 using Windows.Storage;
 using System;
 using System.Threading.Tasks;
 using System.Linq;
 using System.Diagnostics;
-using Windows.Media.Transcoding;
 using Windows.Storage.Pickers;
-using Microsoft.UI.Windowing;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
+using ScreenRecorderLib;
+using System.IO;
+using Windows.Graphics.Display;
+using System.Collections.Generic;
+using System.Linq;
 
 namespace Flex
 {
@@ -27,6 +29,11 @@ namespace Flex
         private bool _devicesInitialized;
         private GraphicsCaptureSession _captureSession;
         private bool _isRecording = false;
+        private Recorder _screenRecorder;
+        private List<RecordableDisplay> _displays;
+        private RecordableDisplay _selectedDisplay;
+        private int _selectedDisplayWidth;
+        private int _selectedDisplayHeight;
 
         public MainWindow()
         {
@@ -52,6 +59,7 @@ namespace Flex
             if (!_devicesInitialized)
             {
                 await PopulateDeviceListsAsync();
+                PopulateDisplayList();
                 _devicesInitialized = true;
             }
         }
@@ -203,7 +211,6 @@ namespace Flex
             SetupScreenCapture();
         }
 
-
         private void SetupScreenCapture()
         {
             var picker = new GraphicsCapturePicker();
@@ -227,8 +234,6 @@ namespace Flex
 
         private async Task StartRecordingAsync()
         {
-            var encodingProfile = MediaEncodingProfile.CreateMp4(VideoEncodingQuality.Auto);
-
             var savePicker = new FileSavePicker();
             var hWnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
             WinRT.Interop.InitializeWithWindow.Initialize(savePicker, hWnd);
@@ -239,17 +244,358 @@ namespace Flex
             StorageFile file = await savePicker.PickSaveFileAsync();
             if (file != null)
             {
-                await _mediaCapture.StartRecordToStorageFileAsync(encodingProfile, file);
-                _isRecording = true;
-                RecordButton.Content = "Stop Recording";
+                string videoPath = file.Path;
+                Debug.WriteLine($"Starting recording to: {videoPath}");
+
+                try
+                {
+                    // Delete the file if it already exists
+                    if (File.Exists(videoPath))
+                    {
+                        Debug.WriteLine($"File already exists: {videoPath}. Deleting...");
+                        File.Delete(videoPath);
+                    }
+
+                    //var sources = new List<RecordingSourceBase>();
+                    ////You can add main monitor by a static MainMonitor property
+                    //var monitor1 = new DisplayRecordingSource(DisplayRecordingSource.MainMonitor);
+                    //////Or any monitor by device name
+                    ////var monitor2 = new DisplayRecordingSource(@"\\.\DISPLAY2");
+                    ////sources.Add(monitor1);
+                    ////sources.Add(monitor2);
+                    ////Or you can all system monitors with the static Recorder.GetDisplays() function.
+                    //sources.AddRange(Recorder.GetDisplays());
+
+                    //var sources = new List<RecordingSourceBase>();
+                    //if (_selectedDisplay != null)
+                    //{
+                    //    sources.Add(new DisplayRecordingSource(_selectedDisplay));
+                    //}
+                    //else
+                    //{
+                    //    sources.AddRange(Recorder.GetDisplays().Select(d => new DisplayRecordingSource(d)));
+                    //}
+
+                    var sources = new List<RecordingSourceBase>();
+                    sources.Add(new DisplayRecordingSource(_selectedDisplay));
+
+                    //double scaleFactor = 1.5; // 150% scaling
+                    //int width = (int)(_selectedDisplayWidth / scaleFactor);
+                    //int height = (int)(_selectedDisplayHeight / scaleFactor);
+
+                    int width = _selectedDisplayWidth;
+                    int height = _selectedDisplayHeight;
+
+                    //// Create the ScreenRect with the effective dimensions
+                    //var rect = new ScreenRect(0, 0, effectiveWidth, effectiveHeight);
+
+                    var output = new ScreenSize(width / 2, height / 2);
+                    var rect = new ScreenRect(0, 0, width, height);
+
+
+                    Debug.WriteLine($"~~~~~~~~~~~~~~Recording source rect: {rect}");
+
+                    var selectedAudioDevice = AudioComboBox.SelectedItem as DeviceInformation;
+
+                    List<AudioDevice> inputAudioDevices = Recorder.GetSystemAudioDevices(AudioDeviceSource.InputDevices);
+                    AudioDevice selectedInputAudioDevice = inputAudioDevices.FirstOrDefault();//select one of the devices.. Passing empty string or null uses system default recording device.
+                    Debug.WriteLine($"============= Selected Audio Device: {selectedAudioDevice?.Name}, ID: {selectedAudioDevice?.Id}");
+                    Debug.WriteLine($"+++++++++++++ Selected Audio Device: {selectedInputAudioDevice?.DeviceName}");
+
+                    List<AudioDevice> outputDevices = Recorder.GetSystemAudioDevices(AudioDeviceSource.OutputDevices);
+                    AudioDevice selectedOutputDevice = outputDevices.FirstOrDefault();//select one of the devices.. Passing empty string or null uses system default playback device.
+
+                    // Configure recording options
+                    RecorderOptions options = new RecorderOptions
+                    {
+                        SourceOptions = new SourceOptions
+                        {
+                            RecordingSources = sources
+                        },
+                        OutputOptions = new OutputOptions
+                        {
+                            RecorderMode = RecorderMode.Video,
+                            //This sets a custom size of the video output, in pixels.
+                            OutputFrameSize = output,
+                            //Stretch controls how the resizing is done, if the new aspect ratio differs.
+                            Stretch = StretchMode.Uniform,
+                            //SourceRect allows you to crop the output.
+                            SourceRect = rect
+                        },
+                        AudioOptions = new AudioOptions
+                        {
+                            //Bitrate = AudioBitrate.bitrate_128kbps,
+                            //Channels = AudioChannels.Stereo,
+                            IsAudioEnabled = true,
+                            IsOutputDeviceEnabled = true,
+                            IsInputDeviceEnabled = true,
+                            AudioOutputDevice = selectedOutputDevice.DeviceName,
+                            AudioInputDevice = selectedInputAudioDevice.DeviceName
+                        },
+                        VideoEncoderOptions = new VideoEncoderOptions
+                        {
+                            Bitrate = 8000 * 1000,
+                            Framerate = 60,
+                            IsFixedFramerate = true,
+                            //Currently supported are H264VideoEncoder and H265VideoEncoder
+                            Encoder = new H264VideoEncoder
+                            {
+                                BitrateMode = H264BitrateControlMode.CBR,
+                                EncoderProfile = H264Profile.Main,
+                            },
+                            //Fragmented Mp4 allows playback to start at arbitrary positions inside a video stream,
+                            //instead of requiring to read the headers at the start of the stream.
+                            IsFragmentedMp4Enabled = true,
+                            //If throttling is disabled, out of memory exceptions may eventually crash the program,
+                            //depending on encoder settings and system specifications.
+                            IsThrottlingDisabled = false,
+                            //Hardware encoding is enabled by default.
+                            IsHardwareEncodingEnabled = true,
+                            //Low latency mode provides faster encoding, but can reduce quality.
+                            IsLowLatencyEnabled = false,
+                            //Fast start writes the mp4 header at the beginning of the file, to facilitate streaming.
+                            IsMp4FastStartEnabled = false
+                        },
+                        //MouseOptions = new MouseOptions
+                        //{
+                        //    //Displays a colored dot under the mouse cursor when the left mouse button is pressed.	
+                        //    IsMouseClicksDetected = true,
+                        //    MouseLeftClickDetectionColor = "#FFFF00",
+                        //    MouseRightClickDetectionColor = "#FFFF00",
+                        //    MouseClickDetectionRadius = 30,
+                        //    MouseClickDetectionDuration = 100,
+                        //    IsMousePointerEnabled = true,
+                        //    /* Polling checks every millisecond if a mouse button is pressed.
+                        //       Hook is more accurate, but may affect mouse performance as every mouse update must be processed.*/
+                        //    MouseClickDetectionMode = MouseDetectionMode.Hook
+                        //},
+                        //OverlayOptions = new OverLayOptions
+                        //{
+                        //    //Populate and pass a list of recording overlays.
+                        //    Overlays = new List<RecordingOverlayBase>()
+                        //},
+                        //SnapshotOptions = new SnapshotOptions
+                        //{
+                        //    //Take a snapshot of the video output at the given interval
+                        //    SnapshotsWithVideo = false,
+                        //    SnapshotsIntervalMillis = 1000,
+                        //    SnapshotFormat = ImageFormat.PNG,
+                        //    //Optional path to the directory to store snapshots in
+                        //    //If not configured, snapshots are stored in the same folder as video output.
+                        //    SnapshotsDirectory = ""
+                        //},
+                        //LogOptions = new LogOptions
+                        //{
+                        //    //This enabled logging in release builds.
+                        //    IsLogEnabled = true,
+                        //    //If this path is configured, logs are redirected to this file.
+                        //    LogFilePath = "recorder.log",
+                        //    LogSeverityLevel = ScreenRecorderLib.LogLevel.Debug
+                        //}
+                    };
+
+                    Debug.WriteLine($"########################## Selected Audio Device: {selectedAudioDevice?.Name}, ID: {selectedAudioDevice?.Id}");
+                    Debug.WriteLine($"Audio Input Device set to: {options.AudioOptions.AudioInputDevice}");
+                    Debug.WriteLine($"InputVolume: {options.AudioOptions.InputVolume}");
+                    Debug.WriteLine($"OutputVolume: {options.AudioOptions.OutputVolume}");
+
+
+                    Debug.WriteLine("Recorder options:");
+                    Debug.WriteLine($"Audio Enabled: {options.AudioOptions.IsAudioEnabled}");
+                    Debug.WriteLine($"Output Device Enabled: {options.AudioOptions.IsOutputDeviceEnabled}");
+                    Debug.WriteLine($"Input Device Enabled: {options.AudioOptions.IsInputDeviceEnabled}");
+                    Debug.WriteLine($"Framerate: {options.VideoEncoderOptions.Framerate}");
+                    Debug.WriteLine($"Is Fixed Framerate: {options.VideoEncoderOptions.IsFixedFramerate}");
+                    Debug.WriteLine($"Bitrate: {options.VideoEncoderOptions.Bitrate}");
+                    //Debug.WriteLine($"Encoder Profile: {options.VideoEncoderOptions.Encoder.EncoderProfile}");
+                    Debug.WriteLine($"Bitrate Mode: {((H264VideoEncoder)options.VideoEncoderOptions.Encoder).BitrateMode}");
+
+                    Debug.WriteLine($"Recorder options configured: {Newtonsoft.Json.JsonConvert.SerializeObject(options)}");
+
+
+
+                    // Initialize ScreenRecorderLib
+                    _screenRecorder = Recorder.CreateRecorder(options);
+                    _screenRecorder.OnRecordingComplete += ScreenRecorder_OnRecordingComplete;
+                    _screenRecorder.OnRecordingFailed += ScreenRecorder_OnRecordingFailed;
+                    _screenRecorder.OnStatusChanged += ScreenRecorder_OnStatusChanged;
+
+
+                    
+                    // Start recording
+                    try
+                    {
+                        Debug.WriteLine("Calling Record method...");
+                        _screenRecorder.Record(videoPath);
+                        Debug.WriteLine("Record method called successfully");
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.WriteLine($"Exception during Record call: {ex.GetType().Name} - {ex.Message}");
+                        Debug.WriteLine($"Stack Trace: {ex.StackTrace}");
+                        if (ex.InnerException != null)
+                        {
+                            Debug.WriteLine($"Inner Exception: {ex.InnerException.GetType().Name} - {ex.InnerException.Message}");
+                        }
+                        throw; // Re-throw the exception to be caught by the outer try-catch block
+                    }
+
+                    Debug.WriteLine("Waiting for recording to start...");
+                    for (int i = 0; i < 50; i++) // Increased from 10 to 50
+                    {
+                        await Task.Delay(100);
+                        if (_screenRecorder.Status == RecorderStatus.Recording)
+                        {
+                            Debug.WriteLine("Recording started successfully.");
+                            _isRecording = true;
+                            RecordButton.Content = "Stop Recording";
+                            return;
+                        }
+                    }
+
+                    Debug.WriteLine("Recording did not start within the expected time.");
+                    throw new TimeoutException("Recording did not start within the expected time.");
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"Exception during recording start: {ex.GetType().Name} - {ex.Message}");
+                    if (ex.InnerException != null)
+                    {
+                        Debug.WriteLine($"Inner Exception: {ex.InnerException.GetType().Name} - {ex.InnerException.Message}");
+                    }
+                    Debug.WriteLine($"Stack Trace: {ex.StackTrace}");
+                }
+            }
+            else
+            {
+                Debug.WriteLine("File selection was cancelled");
             }
         }
 
         private async Task StopRecordingAsync()
         {
-            await _mediaCapture.StopRecordAsync();
-            _isRecording = false;
-            RecordButton.Content = "Start Recording";
+            if (_screenRecorder != null && _isRecording)
+            {
+                Debug.WriteLine("Stopping recording...");
+                await Task.Run(() => _screenRecorder.Stop());
+                Debug.WriteLine("Stop method called");
+                _isRecording = false;
+                RecordButton.Content = "Start Recording";
+            }
+            else
+            {
+                Debug.WriteLine("No active recording to stop");
+            }
+        }
+
+        private void ScreenRecorder_OnRecordingComplete(object sender, RecordingCompleteEventArgs e)
+        {
+            Debug.WriteLine($"Recording completed: {e.FilePath}");
+            //Debug.WriteLine($"Recording duration: {e.Duration}");
+            //Debug.WriteLine($"File size: {e.FileSize} bytes");
+        }
+
+        private void ScreenRecorder_OnRecordingFailed(object sender, RecordingFailedEventArgs e)
+        {
+            Debug.WriteLine($"Recording failed: {e.Error}");
+            //if (e.Exception != null)
+            //{
+            //    Debug.WriteLine($"Exception details: {e.Exception.GetType().Name} - {e.Exception.Message}");
+            //    if (e.Exception.InnerException != null)
+            //    {
+            //        Debug.WriteLine($"Inner Exception: {e.Exception.InnerException.GetType().Name} - {e.Exception.InnerException.Message}");
+            //    }
+            //    Debug.WriteLine($"Stack Trace: {e.Exception.StackTrace}");
+            //}
+        }
+
+        private void ScreenRecorder_OnStatusChanged(object sender, RecordingStatusEventArgs e)
+        {
+            Debug.WriteLine($"Recording status changed: {e.Status}");
+            if (e.Status == RecorderStatus.Recording)
+            {
+                Debug.WriteLine("Recording has started successfully");
+            }
+            else if (e.Status == RecorderStatus.Idle)
+            {
+                Debug.WriteLine("Recording has stopped");
+            }
+        }
+
+        private void PopulateDisplayList()
+        {
+            _displays = Recorder.GetDisplays().ToList();
+            foreach (var display in _displays)
+            {
+                DisplayComboBox.Items.Add(display.DeviceName);
+            }
+            if (DisplayComboBox.Items.Count > 0)
+            {
+                DisplayComboBox.SelectedIndex = 0;
+            }
+        }
+
+        private void DisplayComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (DisplayComboBox.SelectedIndex >= 0)
+            {
+                _selectedDisplay = _displays[DisplayComboBox.SelectedIndex];
+                var (width, height) = GetDisplaySize(_selectedDisplay.DeviceName);
+                _selectedDisplayWidth = width;
+                _selectedDisplayHeight = height;
+                Debug.WriteLine($"Selected display: {_selectedDisplay.DeviceName}, Size: {width}x{height}");
+            }
+        }
+
+        [DllImport("user32.dll")]
+        static extern bool EnumDisplaySettings(string deviceName, int modeNum, ref DEVMODE devMode);
+
+        [StructLayout(LayoutKind.Sequential)]
+        struct DEVMODE
+        {
+            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)]
+            public string dmDeviceName;
+            public short dmSpecVersion;
+            public short dmDriverVersion;
+            public short dmSize;
+            public short dmDriverExtra;
+            public int dmFields;
+            public int dmPositionX;
+            public int dmPositionY;
+            public int dmDisplayOrientation;
+            public int dmDisplayFixedOutput;
+            public short dmColor;
+            public short dmDuplex;
+            public short dmYResolution;
+            public short dmTTOption;
+            public short dmCollate;
+            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)]
+            public string dmFormName;
+            public short dmLogPixels;
+            public int dmBitsPerPel;
+            public int dmPelsWidth;
+            public int dmPelsHeight;
+            public int dmDisplayFlags;
+            public int dmDisplayFrequency;
+            public int dmICMMethod;
+            public int dmICMIntent;
+            public int dmMediaType;
+            public int dmDitherType;
+            public int dmReserved1;
+            public int dmReserved2;
+            public int dmPanningWidth;
+            public int dmPanningHeight;
+        }
+
+        private (int width, int height) GetDisplaySize(string deviceName)
+        {
+            DEVMODE devMode = new DEVMODE();
+            devMode.dmSize = (short)Marshal.SizeOf(devMode);
+            if (EnumDisplaySettings(deviceName, -1, ref devMode))
+            {
+                return (devMode.dmPelsWidth, devMode.dmPelsHeight);
+            }
+            return (0, 0); // Return 0,0 if we couldn't get the display settings
         }
     }
 }
