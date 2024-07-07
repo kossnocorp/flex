@@ -16,9 +16,7 @@ using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using ScreenRecorderLib;
 using System.IO;
-using Windows.Graphics.Display;
-using System.Collections.Generic;
-using System.Linq;
+using System.Collections.ObjectModel;
 
 namespace Flex
 {
@@ -60,6 +58,9 @@ namespace Flex
             {
                 await PopulateDeviceListsAsync();
                 PopulateDisplayList();
+
+                PopulateAudioOutput();
+
                 _devicesInitialized = true;
             }
         }
@@ -301,9 +302,8 @@ namespace Flex
                     AudioDevice selectedInputAudioDevice = inputAudioDevices.FirstOrDefault();//select one of the devices.. Passing empty string or null uses system default recording device.
                     Debug.WriteLine($"============= Selected Audio Device: {selectedAudioDevice?.Name}, ID: {selectedAudioDevice?.Id}");
                     Debug.WriteLine($"+++++++++++++ Selected Audio Device: {selectedInputAudioDevice?.DeviceName}");
-
-                    List<AudioDevice> outputDevices = Recorder.GetSystemAudioDevices(AudioDeviceSource.OutputDevices);
-                    AudioDevice selectedOutputDevice = outputDevices.FirstOrDefault();//select one of the devices.. Passing empty string or null uses system default playback device.
+ 
+                    var audioOutputDevice = AudioOutputComboBox.SelectedItem as AudioDevice;
 
                     // Configure recording options
                     RecorderOptions options = new RecorderOptions
@@ -327,9 +327,11 @@ namespace Flex
                             //Bitrate = AudioBitrate.bitrate_128kbps,
                             //Channels = AudioChannels.Stereo,
                             IsAudioEnabled = true,
-                            IsOutputDeviceEnabled = true,
+                            // Audio ouput capturing
+                            IsOutputDeviceEnabled = audioOutputDevice.DeviceName != "",
+                            AudioOutputDevice = audioOutputDevice.DeviceName,
+                            // Audio input capturing
                             IsInputDeviceEnabled = true,
-                            AudioOutputDevice = selectedOutputDevice.DeviceName,
                             AudioInputDevice = selectedInputAudioDevice.DeviceName
                         },
                         VideoEncoderOptions = new VideoEncoderOptions
@@ -421,7 +423,7 @@ namespace Flex
                     _screenRecorder.OnStatusChanged += ScreenRecorder_OnStatusChanged;
 
 
-                    
+
                     // Start recording
                     try
                     {
@@ -596,6 +598,18 @@ namespace Flex
                 return (devMode.dmPelsWidth, devMode.dmPelsHeight);
             }
             return (0, 0); // Return 0,0 if we couldn't get the display settings
+        }
+
+        ObservableCollection<AudioDevice> audioOutputDevices = new ObservableCollection<AudioDevice>();
+
+        private void PopulateAudioOutput()
+        {
+            var emptyDevice = new AudioDevice { DeviceName = "", FriendlyName = "Disabled" };
+            audioOutputDevices.Add(emptyDevice);
+            AudioOutputComboBox.SelectedItem = emptyDevice;
+
+            List<AudioDevice> outputDevices = Recorder.GetSystemAudioDevices(AudioDeviceSource.OutputDevices);
+            outputDevices.ForEach(d => audioOutputDevices.Add(d));
         }
     }
 }

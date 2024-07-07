@@ -22,11 +22,21 @@
                 Width="300" 
                 Margin="10" />
         </StackPanel>
+
+        <ComboBox x:Name="AudioOutputComboBox" 
+                Header="Audio output"
+                PlaceholderText="Disabled" 
+                ItemsSource="{x:Bind audioOutputDevices}" 
+                DisplayMemberPath="FriendlyName"
+                Width="300" 
+                Margin="10" />
+
         <ComboBox x:Name="DisplayComboBox"
             Header="Select Display"
             SelectionChanged="DisplayComboBox_SelectionChanged"
             Width="300"
             Margin="10" />
+
         <Border BorderBrush="Red" BorderThickness="2">
             <MediaPlayerElement x:Name="WebcamFeed" 
                                 Height="300" 
@@ -34,6 +44,7 @@
                                 Background="LightBlue"
                                 AreTransportControlsEnabled="False" />
         </Border>
+
         <Button x:Name="RecordButton" 
                 Content="Start Recording" 
                 Click="RecordButton_Click"
