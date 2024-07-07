@@ -25,7 +25,6 @@ namespace Flex
         private MediaCapture _mediaCapture;
         private MediaPlayer _mediaPlayer;
         private bool _devicesInitialized;
-        private GraphicsCaptureSession _captureSession;
         private bool _isRecording = false;
         private Recorder _screenRecorder;
         private List<RecordableDisplay> _displays;
@@ -59,7 +58,7 @@ namespace Flex
                 await PopulateDeviceListsAsync();
                 PopulateDisplayList();
 
-                PopulateAudioOutput();
+                PopulateAudioDevices();
 
                 _devicesInitialized = true;
             }
@@ -82,22 +81,6 @@ namespace Flex
                 WebcamComboBox.SelectedIndex = 0;
                 Debug.WriteLine("Set default selected webcam");
             }
-
-            // Populate audio list
-            var audioDevices = await DeviceInformation.FindAllAsync(DeviceClass.AudioCapture);
-            foreach (var device in audioDevices)
-            {
-                AudioComboBox.Items.Add(device);
-                Debug.WriteLine($"Added audio device: {device.Name}");
-            }
-
-            if (AudioComboBox.Items.Count > 0)
-            {
-                AudioComboBox.SelectedIndex = 0;
-                Debug.WriteLine("Set default selected microphone");
-            }
-
-            Debug.WriteLine($"Found {WebcamComboBox.Items.Count} webcam devices and {AudioComboBox.Items.Count} audio devices");
         }
 
         private async void WebcamComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -106,21 +89,14 @@ namespace Flex
             await InitializeMediaCaptureAsync();
         }
 
-        private async void AudioComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
-        {
-            Debug.WriteLine("AudioComboBox_SelectionChanged called");
-            await InitializeMediaCaptureAsync();
-        }
-
         private async Task InitializeMediaCaptureAsync()
         {
-            if (WebcamComboBox.SelectedItem is not DeviceInformation selectedVideoDevice ||
-                AudioComboBox.SelectedItem is not DeviceInformation selectedAudioDevice)
+            if (WebcamComboBox.SelectedItem is not DeviceInformation selectedVideoDevice)
             {
                 return;
             }
 
-            Debug.WriteLine($"InitializeMediaCaptureAsync started for video device: {selectedVideoDevice.Name} and audio device: {selectedAudioDevice.Name}");
+            Debug.WriteLine($"InitializeMediaCaptureAsync started for video device: {selectedVideoDevice.Name}");
 
             if (_mediaCapture != null)
             {
@@ -133,8 +109,7 @@ namespace Flex
             var settings = new MediaCaptureInitializationSettings
             {
                 VideoDeviceId = selectedVideoDevice.Id,
-                AudioDeviceId = selectedAudioDevice.Id,
-                StreamingCaptureMode = StreamingCaptureMode.AudioAndVideo
+                StreamingCaptureMode = StreamingCaptureMode.Video
             };
 
             try
@@ -293,18 +268,6 @@ namespace Flex
                     var output = new ScreenSize(width / 2, height / 2);
                     var rect = new ScreenRect(0, 0, width, height);
 
-
-                    Debug.WriteLine($"~~~~~~~~~~~~~~Recording source rect: {rect}");
-
-                    var selectedAudioDevice = AudioComboBox.SelectedItem as DeviceInformation;
-
-                    List<AudioDevice> inputAudioDevices = Recorder.GetSystemAudioDevices(AudioDeviceSource.InputDevices);
-                    AudioDevice selectedInputAudioDevice = inputAudioDevices.FirstOrDefault();//select one of the devices.. Passing empty string or null uses system default recording device.
-                    Debug.WriteLine($"============= Selected Audio Device: {selectedAudioDevice?.Name}, ID: {selectedAudioDevice?.Id}");
-                    Debug.WriteLine($"+++++++++++++ Selected Audio Device: {selectedInputAudioDevice?.DeviceName}");
- 
-                    var audioOutputDevice = AudioOutputComboBox.SelectedItem as AudioDevice;
-
                     // Configure recording options
                     RecorderOptions options = new RecorderOptions
                     {
@@ -322,18 +285,7 @@ namespace Flex
                             //SourceRect allows you to crop the output.
                             SourceRect = rect
                         },
-                        AudioOptions = new AudioOptions
-                        {
-                            //Bitrate = AudioBitrate.bitrate_128kbps,
-                            //Channels = AudioChannels.Stereo,
-                            IsAudioEnabled = true,
-                            // Audio ouput capturing
-                            IsOutputDeviceEnabled = audioOutputDevice.DeviceName != "",
-                            AudioOutputDevice = audioOutputDevice.DeviceName,
-                            // Audio input capturing
-                            IsInputDeviceEnabled = true,
-                            AudioInputDevice = selectedInputAudioDevice.DeviceName
-                        },
+                        AudioOptions = GetAudioOptions(),
                         VideoEncoderOptions = new VideoEncoderOptions
                         {
                             Bitrate = 8000 * 1000,
@@ -396,7 +348,6 @@ namespace Flex
                         //}
                     };
 
-                    Debug.WriteLine($"########################## Selected Audio Device: {selectedAudioDevice?.Name}, ID: {selectedAudioDevice?.Id}");
                     Debug.WriteLine($"Audio Input Device set to: {options.AudioOptions.AudioInputDevice}");
                     Debug.WriteLine($"InputVolume: {options.AudioOptions.InputVolume}");
                     Debug.WriteLine($"OutputVolume: {options.AudioOptions.OutputVolume}");
@@ -600,16 +551,54 @@ namespace Flex
             return (0, 0); // Return 0,0 if we couldn't get the display settings
         }
 
+        ObservableCollection<AudioDevice> audioInputDevices = new ObservableCollection<AudioDevice>();
+
         ObservableCollection<AudioDevice> audioOutputDevices = new ObservableCollection<AudioDevice>();
 
-        private void PopulateAudioOutput()
+        private void PopulateAudioDevices()
         {
             var emptyDevice = new AudioDevice { DeviceName = "", FriendlyName = "Disabled" };
+
+            // Input
+
+            audioInputDevices.Add(emptyDevice);
+
+            List<AudioDevice> inputDevices = Recorder.GetSystemAudioDevices(AudioDeviceSource.InputDevices);
+            inputDevices.ForEach(d => audioInputDevices.Add(d));
+
+            AudioDevice defaultInputAudioDevice = inputDevices.FirstOrDefault();
+
+            // Select first or default device
+            AudioInputComboBox.SelectedItem = defaultInputAudioDevice;
+
+            // Output
+
             audioOutputDevices.Add(emptyDevice);
-            AudioOutputComboBox.SelectedItem = emptyDevice;
 
             List<AudioDevice> outputDevices = Recorder.GetSystemAudioDevices(AudioDeviceSource.OutputDevices);
             outputDevices.ForEach(d => audioOutputDevices.Add(d));
+
+            // Select empty
+            AudioOutputComboBox.SelectedItem = emptyDevice;
+        }
+
+        private AudioOptions GetAudioOptions()
+        {
+            var audioInputDevice = AudioInputComboBox.SelectedItem as AudioDevice;
+            var audioOutputDevice = AudioOutputComboBox.SelectedItem as AudioDevice;
+
+            return new AudioOptions
+            {
+                //Bitrate = AudioBitrate.bitrate_128kbps,
+                //Channels = AudioChannels.Stereo,
+                IsAudioEnabled = true,
+                // Audio ouput capturing
+                IsOutputDeviceEnabled = audioOutputDevice.DeviceName != "",
+                AudioOutputDevice = audioOutputDevice.DeviceName,
+                // Audio input capturing
+                IsInputDeviceEnabled = audioInputDevice.DeviceName != "",
+                AudioInputDevice = audioInputDevice.DeviceName
+            };
         }
     }
 }

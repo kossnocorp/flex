@@ -15,21 +15,25 @@
                 DisplayMemberPath="Name"
                 Width="300" 
                 Margin="10" />
-            <ComboBox x:Name="AudioComboBox" 
-                Header="Select Microphone"
-                SelectionChanged="AudioComboBox_SelectionChanged"
-                DisplayMemberPath="Name"
-                Width="300" 
-                Margin="10" />
         </StackPanel>
 
-        <ComboBox x:Name="AudioOutputComboBox" 
+        <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+            <ComboBox x:Name="AudioInputComboBox" 
+                Header="Audio input"
+                PlaceholderText="Disabled" 
+                ItemsSource="{x:Bind audioInputDevices}" 
+                DisplayMemberPath="FriendlyName"
+                Width="300" 
+                Margin="10" />
+
+            <ComboBox x:Name="AudioOutputComboBox" 
                 Header="Audio output"
                 PlaceholderText="Disabled" 
                 ItemsSource="{x:Bind audioOutputDevices}" 
                 DisplayMemberPath="FriendlyName"
                 Width="300" 
                 Margin="10" />
+        </StackPanel>
 
         <ComboBox x:Name="DisplayComboBox"
             Header="Select Display"
