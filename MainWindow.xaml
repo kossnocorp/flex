@@ -1,58 +1,88 @@
-<?xml version="1.0" encoding="utf-8"?>
 <Window
     x:Class="Flex.MainWindow"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    xmlns:local="using:Flex"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:local="using:Flex"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     mc:Ignorable="d">
-    <StackPanel Orientation="Vertical" HorizontalAlignment="Center" VerticalAlignment="Center">
-        <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
-            <ComboBox x:Name="WebcamComboBox" 
-                Header="Select Webcam"
-                SelectionChanged="WebcamComboBox_SelectionChanged"
-                DisplayMemberPath="Name"
-                Width="300" 
-                Margin="10" />
-        </StackPanel>
 
-        <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
-            <ComboBox x:Name="AudioInputComboBox" 
-                Header="Audio input"
-                PlaceholderText="Disabled" 
-                ItemsSource="{x:Bind audioInputDevices}" 
-                DisplayMemberPath="FriendlyName"
-                Width="300" 
-                Margin="10" />
+    <ScrollViewer>
+        <StackPanel
+            x:Name="RootPanel"
+            Width="360"
+            Margin="10">
+            <StackPanel Margin="0,0,0,10">
+                <TextBlock
+                    Margin="0,0,0,5"
+                    FontWeight="Bold"
+                    Text="Screen" />
+                <ComboBox
+                    x:Name="DisplayComboBox"
+                    Width="300"
+                    Margin="0,5,0,0"
+                    Header="Select Display"
+                    SelectionChanged="DisplayComboBox_SelectionChanged" />
+            </StackPanel>
 
-            <ComboBox x:Name="AudioOutputComboBox" 
-                Header="Audio output"
-                PlaceholderText="Disabled" 
-                ItemsSource="{x:Bind audioOutputDevices}" 
-                DisplayMemberPath="FriendlyName"
-                Width="300" 
-                Margin="10" />
-        </StackPanel>
+            <Border
+                Margin="0,0,0,10"
+                BorderBrush="Gray"
+                BorderThickness="0,1,0,0" />
 
-        <ComboBox x:Name="DisplayComboBox"
-            Header="Select Display"
-            SelectionChanged="DisplayComboBox_SelectionChanged"
-            Width="300"
-            Margin="10" />
+            <StackPanel Margin="0,10,0,10">
+                <TextBlock
+                    Margin="0,0,0,5"
+                    FontWeight="Bold"
+                    Text="Webcam" />
+                <ComboBox
+                    x:Name="WebcamComboBox"
+                    Width="300"
+                    Margin="0,5,0,0"
+                    DisplayMemberPath="Name"
+                    Header="Select Webcam"
+                    SelectionChanged="WebcamComboBox_SelectionChanged" />
+            </StackPanel>
 
-        <Border BorderBrush="Red" BorderThickness="2">
-            <MediaPlayerElement x:Name="WebcamFeed" 
-                                Height="300" 
-                                Width="400" 
-                                Background="LightBlue"
-                                AreTransportControlsEnabled="False" />
-        </Border>
+            <Border
+                Margin="0,0,0,10"
+                BorderBrush="Gray"
+                BorderThickness="0,1,0,0" />
 
-        <Button x:Name="RecordButton" 
-                Content="Start Recording" 
+            <StackPanel Margin="0,10,0,10">
+                <TextBlock
+                    Margin="0,0,0,5"
+                    FontWeight="Bold"
+                    Text="Audio" />
+                <ComboBox
+                    x:Name="AudioInputComboBox"
+                    Width="300"
+                    Margin="0,5,0,5"
+                    DisplayMemberPath="FriendlyName"
+                    Header="Audio input"
+                    ItemsSource="{x:Bind audioInputDevices}"
+                    PlaceholderText="Disabled" />
+                <ComboBox
+                    x:Name="AudioOutputComboBox"
+                    Width="300"
+                    Margin="0,5,0,0"
+                    DisplayMemberPath="FriendlyName"
+                    Header="Audio output"
+                    ItemsSource="{x:Bind audioOutputDevices}"
+                    PlaceholderText="Disabled" />
+            </StackPanel>
+
+            <Border
+                Margin="0,0,0,10"
+                BorderBrush="Gray"
+                BorderThickness="0,1,0,0" />
+
+            <Button
+                x:Name="RecordButton"
+                Margin="0,20,0,0"
+                HorizontalAlignment="Center"
                 Click="RecordButton_Click"
-                Margin="0,10,0,0"
-                HorizontalAlignment="Center"/>
-    </StackPanel>
+                Content="Start Recording" />
+        </StackPanel>
+    </ScrollViewer>
 </Window>

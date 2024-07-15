@@ -1,0 +1,47 @@
+<Window
+    x:Class="Flex.WebcamWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:Flex"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d"
+>
+    <Grid x:Name="WebcamContainer" Background="Black">
+        <MediaPlayerElement x:Name="WebcamFeed" 
+                        AreTransportControlsEnabled="False"
+                        Stretch="UniformToFill"/>
+        <Grid x:Name="RecordingOverlay">
+            <Border x:Name="TimerBorder"
+                Background="#80000000"
+                CornerRadius="4"
+                VerticalAlignment="Top"
+                HorizontalAlignment="Center"
+                Margin="0,10,0,0"
+                Visibility="Collapsed">
+                <TextBlock x:Name="TimerText" 
+                       Foreground="White" 
+                       FontSize="14" 
+                       Padding="6,3"/>
+            </Border>
+
+            <Button x:Name="StopButton" 
+        Width="20" 
+        Height="20" 
+        VerticalAlignment="Bottom"
+        HorizontalAlignment="Center"
+        Margin="0,0,0,5"
+        Padding="0"
+        Visibility="Collapsed"
+        Click="StopButton_Click">
+                <Button.Content>
+                    <Rectangle Fill="#9B0002" 
+                   Width="20" 
+                   Height="20"
+                   RadiusX="2"
+                   RadiusY="2"/>
+                </Button.Content>
+            </Button>
+        </Grid>
+    </Grid>
+</Window>

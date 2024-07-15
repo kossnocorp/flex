@@ -17,6 +17,19 @@ using System.Runtime.InteropServices;
 using ScreenRecorderLib;
 using System.IO;
 using System.Collections.ObjectModel;
+using Microsoft.UI;
+using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Composition;
+using Microsoft.UI.Xaml.Hosting;
+using Microsoft.UI.Windowing;
+using Windows.UI;
+using Microsoft.UI.Windowing;
+using Microsoft.UI;
+using Windows.UI;
+using WinRT.Interop;
+using WinUIEx;
+using Windows.Graphics;
 
 namespace Flex
 {
@@ -32,23 +45,48 @@ namespace Flex
         private int _selectedDisplayWidth;
         private int _selectedDisplayHeight;
 
+        WebcamWindow _webcamWindow = new WebcamWindow();
+
         public MainWindow()
         {
-            this.InitializeComponent();
+            InitializeComponent();
+            ConfigureWindow();
+
+            //SystemBackdrop = new MicaBackdrop();
+
             this.Activated += MainWindow_Activated;
             Debug.WriteLine("MainWindow constructor called");
 
-            // Make window always on top
-            var hWnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
-            SetWindowPos(hWnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
+            _webcamWindow.Show();
+
+            _webcamWindow.StopRecordingRequested += async (sender, args) =>
+            {
+                Debug.WriteLine("StopRecordingRequested event received");
+                DispatcherQueue.TryEnqueue(async () =>
+                {
+                    Debug.WriteLine("DispatcherQueue.TryEnqueue called");
+                    this.Show();
+                    _webcamWindow.StopRecording();
+                    await StopRecordingAsync();
+                });
+            };
+
+            _webcamWindow.Activate();
         }
 
-        [DllImport("user32.dll")]
-        private static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
+        void ConfigureWindow()
+        {
+            ExtendsContentIntoTitleBar = true;
 
-        private static readonly IntPtr HWND_TOPMOST = new IntPtr(-1);
-        private const uint SWP_NOMOVE = 0x0002;
-        private const uint SWP_NOSIZE = 0x0001;
+            var window = AppWindow.GetFromWindowId(WindowInterop.GetWindowId(this));
+            window.Resize(new SizeInt32(600, 800));
+
+            var presenter = window.Presenter as OverlappedPresenter;
+            presenter.IsResizable = false;
+            presenter.IsMaximizable = false;
+
+            WindowInterop.StayOnTop(this);
+        }
 
         private async void MainWindow_Activated(object sender, WindowActivatedEventArgs args)
         {
@@ -61,7 +99,13 @@ namespace Flex
                 PopulateAudioDevices();
 
                 _devicesInitialized = true;
+
+                //HideAllExceptWebcam();
             }
+
+            ////Make window always on top
+            //var hWnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
+            //SetWindowPos(hWnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
         }
 
         private async Task PopulateDeviceListsAsync()
@@ -83,7 +127,10 @@ namespace Flex
             }
         }
 
-        private async void WebcamComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        private async void WebcamComboBox_SelectionChanged(
+            object sender,
+            SelectionChangedEventArgs e
+        )
         {
             Debug.WriteLine("WebcamComboBox_SelectionChanged called");
             await InitializeMediaCaptureAsync();
@@ -92,108 +139,9 @@ namespace Flex
         private async Task InitializeMediaCaptureAsync()
         {
             if (WebcamComboBox.SelectedItem is not DeviceInformation selectedVideoDevice)
-            {
                 return;
-            }
 
-            Debug.WriteLine($"InitializeMediaCaptureAsync started for video device: {selectedVideoDevice.Name}");
-
-            if (_mediaCapture != null)
-            {
-                _mediaCapture.Dispose();
-                _mediaCapture = null;
-                Debug.WriteLine("Disposed existing MediaCapture");
-            }
-
-            _mediaCapture = new MediaCapture();
-            var settings = new MediaCaptureInitializationSettings
-            {
-                VideoDeviceId = selectedVideoDevice.Id,
-                StreamingCaptureMode = StreamingCaptureMode.Video
-            };
-
-            try
-            {
-                Debug.WriteLine("Initializing MediaCapture");
-                await _mediaCapture.InitializeAsync(settings);
-                Debug.WriteLine("MediaCapture initialized successfully");
-
-                if (_mediaPlayer == null)
-                {
-                    _mediaPlayer = new MediaPlayer();
-                    WebcamFeed.SetMediaPlayer(_mediaPlayer);
-                    Debug.WriteLine("Created new MediaPlayer and set it to WebcamFeed");
-                }
-
-                var frameSource = _mediaCapture.FrameSources.FirstOrDefault(source =>
-                    source.Value.Info.MediaStreamType == MediaStreamType.VideoPreview ||
-                    source.Value.Info.MediaStreamType == MediaStreamType.VideoRecord).Value;
-
-                if (frameSource != null)
-                {
-                    Debug.WriteLine($"Found frame source: {frameSource.Info.Id}");
-
-                    // Find a suitable format
-                    var preferredFormat = frameSource.SupportedFormats.FirstOrDefault(format =>
-                        format.VideoFormat.Width == 640 &&
-                        format.VideoFormat.Height == 480 &&
-                        format.Subtype == MediaEncodingSubtypes.Nv12);
-
-                    if (preferredFormat != null)
-                    {
-                        await frameSource.SetFormatAsync(preferredFormat);
-                        Debug.WriteLine($"Set video format to: {preferredFormat.Subtype} {preferredFormat.VideoFormat.Width}x{preferredFormat.VideoFormat.Height}");
-                    }
-                    else
-                    {
-                        Debug.WriteLine("Preferred format not found. Using default format.");
-                    }
-
-                    _mediaPlayer.Source = MediaSource.CreateFromMediaFrameSource(frameSource);
-                    Debug.WriteLine("Set MediaPlayer source from frame source");
-                    _mediaPlayer.Play();
-                    Debug.WriteLine("Started MediaPlayer playback");
-
-                    // Log some information about the frame source
-                    Debug.WriteLine($"Frame source info: {frameSource.Info.Id}, {frameSource.Info.MediaStreamType}");
-                    Debug.WriteLine($"Current format: {frameSource.CurrentFormat.Subtype}");
-                }
-                else
-                {
-                    Debug.WriteLine("No suitable frame source found");
-                    throw new Exception("No suitable video frame source found on this device.");
-                }
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"Exception in InitializeMediaCaptureAsync: {ex.GetType().Name} - {ex.Message}");
-                if (ex.InnerException != null)
-                {
-                    Debug.WriteLine($"Inner Exception: {ex.InnerException.GetType().Name} - {ex.InnerException.Message}");
-                }
-
-                ContentDialog dialog = new ContentDialog
-                {
-                    XamlRoot = this.Content.XamlRoot,
-                    Title = "Error",
-                    Content = $"An error occurred: {ex.Message}",
-                    CloseButtonText = "OK"
-                };
-
-                await dialog.ShowAsync();
-            }
-
-            // After successfully initializing MediaCapture, set up screen capture
-            SetupScreenCapture();
-        }
-
-        private void SetupScreenCapture()
-        {
-            var picker = new GraphicsCapturePicker();
-            var hWnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
-            WinRT.Interop.InitializeWithWindow.Initialize(picker, hWnd);
-
-            // We'll start the actual capture when the user clicks the record button
+            await _webcamWindow.SetDevice(selectedVideoDevice);
         }
 
         private async void RecordButton_Click(object sender, RoutedEventArgs e)
@@ -271,10 +219,7 @@ namespace Flex
                     // Configure recording options
                     RecorderOptions options = new RecorderOptions
                     {
-                        SourceOptions = new SourceOptions
-                        {
-                            RecordingSources = sources
-                        },
+                        SourceOptions = new SourceOptions { RecordingSources = sources },
                         OutputOptions = new OutputOptions
                         {
                             RecorderMode = RecorderMode.Video,
@@ -312,7 +257,7 @@ namespace Flex
                         },
                         //MouseOptions = new MouseOptions
                         //{
-                        //    //Displays a colored dot under the mouse cursor when the left mouse button is pressed.	
+                        //    //Displays a colored dot under the mouse cursor when the left mouse button is pressed.
                         //    IsMouseClicksDetected = true,
                         //    MouseLeftClickDetectionColor = "#FFFF00",
                         //    MouseRightClickDetectionColor = "#FFFF00",
@@ -348,32 +293,39 @@ namespace Flex
                         //}
                     };
 
-                    Debug.WriteLine($"Audio Input Device set to: {options.AudioOptions.AudioInputDevice}");
+                    Debug.WriteLine(
+                        $"Audio Input Device set to: {options.AudioOptions.AudioInputDevice}"
+                    );
                     Debug.WriteLine($"InputVolume: {options.AudioOptions.InputVolume}");
                     Debug.WriteLine($"OutputVolume: {options.AudioOptions.OutputVolume}");
 
-
                     Debug.WriteLine("Recorder options:");
                     Debug.WriteLine($"Audio Enabled: {options.AudioOptions.IsAudioEnabled}");
-                    Debug.WriteLine($"Output Device Enabled: {options.AudioOptions.IsOutputDeviceEnabled}");
-                    Debug.WriteLine($"Input Device Enabled: {options.AudioOptions.IsInputDeviceEnabled}");
+                    Debug.WriteLine(
+                        $"Output Device Enabled: {options.AudioOptions.IsOutputDeviceEnabled}"
+                    );
+                    Debug.WriteLine(
+                        $"Input Device Enabled: {options.AudioOptions.IsInputDeviceEnabled}"
+                    );
                     Debug.WriteLine($"Framerate: {options.VideoEncoderOptions.Framerate}");
-                    Debug.WriteLine($"Is Fixed Framerate: {options.VideoEncoderOptions.IsFixedFramerate}");
+                    Debug.WriteLine(
+                        $"Is Fixed Framerate: {options.VideoEncoderOptions.IsFixedFramerate}"
+                    );
                     Debug.WriteLine($"Bitrate: {options.VideoEncoderOptions.Bitrate}");
                     //Debug.WriteLine($"Encoder Profile: {options.VideoEncoderOptions.Encoder.EncoderProfile}");
-                    Debug.WriteLine($"Bitrate Mode: {((H264VideoEncoder)options.VideoEncoderOptions.Encoder).BitrateMode}");
+                    Debug.WriteLine(
+                        $"Bitrate Mode: {((H264VideoEncoder)options.VideoEncoderOptions.Encoder).BitrateMode}"
+                    );
 
-                    Debug.WriteLine($"Recorder options configured: {Newtonsoft.Json.JsonConvert.SerializeObject(options)}");
-
-
+                    Debug.WriteLine(
+                        $"Recorder options configured: {Newtonsoft.Json.JsonConvert.SerializeObject(options)}"
+                    );
 
                     // Initialize ScreenRecorderLib
                     _screenRecorder = Recorder.CreateRecorder(options);
                     _screenRecorder.OnRecordingComplete += ScreenRecorder_OnRecordingComplete;
                     _screenRecorder.OnRecordingFailed += ScreenRecorder_OnRecordingFailed;
                     _screenRecorder.OnStatusChanged += ScreenRecorder_OnStatusChanged;
-
-
 
                     // Start recording
                     try
@@ -384,11 +336,15 @@ namespace Flex
                     }
                     catch (Exception ex)
                     {
-                        Debug.WriteLine($"Exception during Record call: {ex.GetType().Name} - {ex.Message}");
+                        Debug.WriteLine(
+                            $"Exception during Record call: {ex.GetType().Name} - {ex.Message}"
+                        );
                         Debug.WriteLine($"Stack Trace: {ex.StackTrace}");
                         if (ex.InnerException != null)
                         {
-                            Debug.WriteLine($"Inner Exception: {ex.InnerException.GetType().Name} - {ex.InnerException.Message}");
+                            Debug.WriteLine(
+                                $"Inner Exception: {ex.InnerException.GetType().Name} - {ex.InnerException.Message}"
+                            );
                         }
                         throw; // Re-throw the exception to be caught by the outer try-catch block
                     }
@@ -396,12 +352,16 @@ namespace Flex
                     Debug.WriteLine("Waiting for recording to start...");
                     for (int i = 0; i < 50; i++) // Increased from 10 to 50
                     {
-                        await Task.Delay(100);
+                        await Task.Delay(10);
                         if (_screenRecorder.Status == RecorderStatus.Recording)
                         {
                             Debug.WriteLine("Recording started successfully.");
                             _isRecording = true;
                             RecordButton.Content = "Stop Recording";
+
+                            _webcamWindow.StartRecording();
+                            this.Hide();
+
                             return;
                         }
                     }
@@ -411,10 +371,14 @@ namespace Flex
                 }
                 catch (Exception ex)
                 {
-                    Debug.WriteLine($"Exception during recording start: {ex.GetType().Name} - {ex.Message}");
+                    Debug.WriteLine(
+                        $"Exception during recording start: {ex.GetType().Name} - {ex.Message}"
+                    );
                     if (ex.InnerException != null)
                     {
-                        Debug.WriteLine($"Inner Exception: {ex.InnerException.GetType().Name} - {ex.InnerException.Message}");
+                        Debug.WriteLine(
+                            $"Inner Exception: {ex.InnerException.GetType().Name} - {ex.InnerException.Message}"
+                        );
                     }
                     Debug.WriteLine($"Stack Trace: {ex.StackTrace}");
                 }
@@ -496,7 +460,9 @@ namespace Flex
                 var (width, height) = GetDisplaySize(_selectedDisplay.DeviceName);
                 _selectedDisplayWidth = width;
                 _selectedDisplayHeight = height;
-                Debug.WriteLine($"Selected display: {_selectedDisplay.DeviceName}, Size: {width}x{height}");
+                Debug.WriteLine(
+                    $"Selected display: {_selectedDisplay.DeviceName}, Size: {width}x{height}"
+                );
             }
         }
 
@@ -522,6 +488,7 @@ namespace Flex
             public short dmYResolution;
             public short dmTTOption;
             public short dmCollate;
+
             [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)]
             public string dmFormName;
             public short dmLogPixels;
@@ -551,9 +518,11 @@ namespace Flex
             return (0, 0); // Return 0,0 if we couldn't get the display settings
         }
 
-        ObservableCollection<AudioDevice> audioInputDevices = new ObservableCollection<AudioDevice>();
+        ObservableCollection<AudioDevice> audioInputDevices =
+            new ObservableCollection<AudioDevice>();
 
-        ObservableCollection<AudioDevice> audioOutputDevices = new ObservableCollection<AudioDevice>();
+        ObservableCollection<AudioDevice> audioOutputDevices =
+            new ObservableCollection<AudioDevice>();
 
         private void PopulateAudioDevices()
         {
@@ -563,7 +532,9 @@ namespace Flex
 
             audioInputDevices.Add(emptyDevice);
 
-            List<AudioDevice> inputDevices = Recorder.GetSystemAudioDevices(AudioDeviceSource.InputDevices);
+            List<AudioDevice> inputDevices = Recorder.GetSystemAudioDevices(
+                AudioDeviceSource.InputDevices
+            );
             inputDevices.ForEach(d => audioInputDevices.Add(d));
 
             AudioDevice defaultInputAudioDevice = inputDevices.FirstOrDefault();
@@ -575,7 +546,9 @@ namespace Flex
 
             audioOutputDevices.Add(emptyDevice);
 
-            List<AudioDevice> outputDevices = Recorder.GetSystemAudioDevices(AudioDeviceSource.OutputDevices);
+            List<AudioDevice> outputDevices = Recorder.GetSystemAudioDevices(
+                AudioDeviceSource.OutputDevices
+            );
             outputDevices.ForEach(d => audioOutputDevices.Add(d));
 
             // Select empty
